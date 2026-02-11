@@ -59,8 +59,33 @@ app.post('/location', (req, res) => {
   }
 });
 
-// Retrieve current location
+// Retrieve current location OR store if query params provided (GET accepts both)
 app.get('/location', (req, res) => {
+  // If query parameters are provided, store them as current location
+  if (req.query.latitude !== undefined && req.query.longitude !== undefined) {
+    try {
+      currentLocation = {
+        latitude: parseFloat(req.query.latitude),
+        longitude: parseFloat(req.query.longitude),
+        timestamp: req.query.timestamp || new Date().toISOString(),
+        device: req.query.device || 'iPhone',
+        receivedAt: new Date().toISOString()
+      };
+
+      console.log(`[${new Date().toISOString()}] Location updated via GET:`, currentLocation);
+
+      return res.json({
+        status: 'ok',
+        message: 'Location received',
+        data: currentLocation
+      });
+    } catch (error) {
+      console.error('Error processing location:', error);
+      return res.status(400).json({ error: 'Invalid parameters' });
+    }
+  }
+
+  // Otherwise, just retrieve current location
   if (!currentLocation.latitude) {
     return res.status(404).json({ error: 'No location data available yet' });
   }
