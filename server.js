@@ -20,10 +20,14 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Location server is running' });
 });
 
-// Receive location from iPhone Shortcut
+// Receive location from iPhone Shortcut (POST with body or query params)
 app.post('/location', (req, res) => {
   try {
-    const { latitude, longitude, timestamp, device } = req.body;
+    // Accept latitude/longitude from either JSON body OR query parameters
+    let latitude = req.body.latitude || req.query.latitude;
+    let longitude = req.body.longitude || req.query.longitude;
+    let timestamp = req.body.timestamp || req.query.timestamp;
+    let device = req.body.device || req.query.device;
 
     // Validate required fields
     if (latitude === null || latitude === undefined || 
