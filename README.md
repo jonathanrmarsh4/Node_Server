@@ -1,10 +1,14 @@
 # Location Tracking Server
 
-A lightweight Node.js server for tracking real-time location via iPhone Shortcuts.
+> A lightweight, privacy-first backend for real-time location and health data synchronization from iOS devices.
+
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Node.js 18+](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/)
+[![GitHub](https://img.shields.io/badge/GitHub-Node__Server-blue)](https://github.com/jonathanrmarsh4/Node_Server)
 
 ## Overview
 
-This server accepts location data POSTed from an iPhone Shortcut and stores the current location, making it accessible via a REST API.
+This server accepts location and health data from iOS devices and stores it for real-time retrieval. Built to work seamlessly with the [HealthKit Location Tracker iOS App](https://github.com/jonathanrmarsh4/HealthKit-LocationTracker-iOS).
 
 ## Features
 
@@ -130,13 +134,38 @@ In iOS Shortcuts, use:
 The server respects environment variables:
 - `PORT` - Server port (default: 3000, Railway sets this automatically)
 
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
+- Setting up development environment
+- Code style and standards
+- Testing your changes
+- Submitting pull requests
+- Roadmap and areas for help
+
+## Roadmap
+
+Check out [ROADMAP.md](ROADMAP.md) for planned features:
+- **Phase 1**: Foundation (Current) ✅
+- **Phase 2**: Data Management (April 2026) 🔄
+- **Phase 3**: Intelligence (May 2026) ⏳
+- **Phase 4**: Enterprise (June 2026+) ⏳
+
+## Getting Help
+
+- **Issues**: Check [existing issues](https://github.com/jonathanrmarsh4/Node_Server/issues)
+- **Bugs**: Report with [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md)
+- **Features**: Request with [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.md)
+- **Questions**: [Open a Discussion](https://github.com/jonathanrmarsh4/Node_Server/discussions)
+
 ## License
 
-MIT
+[MIT License](LICENSE) - Feel free to use in your own projects!
 
 ## Support
 
-For issues, check:
-1. Server is running: `GET /health`
-2. Location data exists: `GET /location`
-3. Recent requests in logs
+For troubleshooting:
+1. Check server status: `GET /health`
+2. Verify location data: `GET /location`
+3. Check server logs: `npm run dev`
+4. Open an issue with debug info
