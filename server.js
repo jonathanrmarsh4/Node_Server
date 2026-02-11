@@ -12,7 +12,11 @@ let currentLocation = {
   longitude: null,
   timestamp: null,
   device: null,
-  receivedAt: null
+  receivedAt: null,
+  health: null,
+  settings: null,
+  deviceModel: null,
+  userId: null
 };
 
 // Health check endpoint
@@ -20,10 +24,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Location server is running' });
 });
 
-// Receive location from iPhone Shortcut (POST with body or query params)
+// Receive location from iPhone (POST with body or query params)
 app.post('/location', (req, res) => {
   try {
-    // Accept latitude/longitude from either JSON body OR query parameters
+    // Accept data from either JSON body OR query parameters
     let latitude = req.body.latitude || req.query.latitude;
     let longitude = req.body.longitude || req.query.longitude;
     let timestamp = req.body.timestamp || req.query.timestamp;
@@ -37,20 +41,55 @@ app.post('/location', (req, res) => {
       });
     }
 
-    // Store location
+    // Extract all health metrics
+    const health = {
+      steps: req.body.steps || req.query.steps,
+      heartRate: req.body.heartRate || req.query.heartRate,
+      restingHeartRate: req.body.restingHeartRate || req.query.restingHeartRate,
+      heartRateVariability: req.body.heartRateVariability || req.query.heartRateVariability,
+      bloodPressureSystolic: req.body.bloodPressureSystolic || req.query.bloodPressureSystolic,
+      bloodPressureDiastolic: req.body.bloodPressureDiastolic || req.query.bloodPressureDiastolic,
+      bloodOxygen: req.body.bloodOxygen || req.query.bloodOxygen,
+      activeEnergy: req.body.activeEnergy || req.query.activeEnergy,
+      basalEnergy: req.body.basalEnergy || req.query.basalEnergy,
+      distance: req.body.distance || req.query.distance,
+      flightsClimbed: req.body.flightsClimbed || req.query.flightsClimbed,
+      sleepDuration: req.body.sleepDuration || req.query.sleepDuration,
+      workouts: req.body.workouts || req.query.workouts
+    };
+
+    // Extract settings if provided
+    const settings = {
+      location_poll_interval_minutes: req.body.location_poll_interval_minutes || req.query.location_poll_interval_minutes || 5,
+      healthkit_sync_interval_hours: req.body.healthkit_sync_interval_hours || req.query.healthkit_sync_interval_hours || 3,
+      sync_on_app_open: req.body.sync_on_app_open !== undefined ? req.body.sync_on_app_open : (req.query.sync_on_app_open !== undefined ? req.query.sync_on_app_open : true),
+      notifications_enabled: req.body.notifications_enabled !== undefined ? req.body.notifications_enabled : (req.query.notifications_enabled !== undefined ? req.query.notifications_enabled : true)
+    };
+
+    // Store location with all associated data
     currentLocation = {
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
       timestamp: timestamp || new Date().toISOString(),
-      device: device || 'unknown',
+      device: device || 'iPhone',
+      deviceModel: req.body.deviceModel || req.query.deviceModel || null,
+      userId: req.body.userId || req.query.userId || null,
+      altitude: req.body.altitude || req.query.altitude,
+      speed: req.body.speed || req.query.speed,
+      health: health,
+      settings: settings,
       receivedAt: new Date().toISOString()
     };
 
-    console.log(`[${new Date().toISOString()}] Location updated:`, currentLocation);
+    console.log(`[${new Date().toISOString()}] Full sync received:`, {
+      location: { lat: currentLocation.latitude, lon: currentLocation.longitude },
+      health: health,
+      settings: settings
+    });
 
     res.json({ 
       status: 'ok', 
-      message: 'Location received',
+      message: 'Location and health data received',
       data: currentLocation 
     });
   } catch (error) {
@@ -69,7 +108,11 @@ app.get('/location', (req, res) => {
         longitude: parseFloat(req.query.longitude),
         timestamp: req.query.timestamp || new Date().toISOString(),
         device: req.query.device || 'iPhone',
-        receivedAt: new Date().toISOString()
+        receivedAt: new Date().toISOString(),
+        health: req.query.health ? JSON.parse(req.query.health) : null,
+        settings: req.query.settings ? JSON.parse(req.query.settings) : null,
+        deviceModel: req.query.deviceModel || null,
+        userId: req.query.userId || null
       };
 
       console.log(`[${new Date().toISOString()}] Location updated via GET:`, currentLocation);
