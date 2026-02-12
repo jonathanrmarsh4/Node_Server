@@ -19,17 +19,127 @@ let currentLocation = {
   userId: null
 };
 
+// ============================================================================
+// HELPER FUNCTIONS - Data Validation & Extraction
+// ============================================================================
+
+/**
+ * Extract health data from request, filtering out undefined values
+ * FIX #1: Only stores values that actually exist (not undefined)
+ */
+function extractHealthData(body, query) {
+  const health = {};
+  
+  const healthFields = [
+    'steps', 'heartRate', 'restingHeartRate', 'heartRateVariability',
+    'bloodPressureSystolic', 'bloodPressureDiastolic', 'bloodOxygen',
+    'activeEnergy', 'basalEnergy', 'distance', 'flightsClimbed',
+    'sleepDuration', 'workouts'
+  ];
+  
+  // Only add fields that have actual values
+  for (const field of healthFields) {
+    const value = body[field] !== undefined ? body[field] : query[field];
+    if (value !== undefined && value !== null && value !== '') {
+      health[field] = value;
+    }
+  }
+  
+  // Return null if no health data, otherwise return object with only populated fields
+  return Object.keys(health).length > 0 ? health : null;
+}
+
+/**
+ * Validate health data has correct types
+ * FIX #3: Ensures numeric fields are actually numbers
+ */
+function validateHealthData(health) {
+  if (!health || typeof health !== 'object') return true;
+  
+  const numberFields = [
+    'steps', 'heartRate', 'restingHeartRate', 'heartRateVariability',
+    'bloodPressureSystolic', 'bloodPressureDiastolic', 'bloodOxygen',
+    'activeEnergy', 'basalEnergy', 'distance', 'flightsClimbed',
+    'sleepDuration'
+  ];
+  
+  for (const field of numberFields) {
+    if (health[field] !== undefined) {
+      if (typeof health[field] !== 'number') {
+        throw new Error(
+          `Health data validation failed: '${field}' must be a number, ` +
+          `got ${typeof health[field]} (value: ${JSON.stringify(health[field])})`
+        );
+      }
+      
+      // Validate reasonable ranges for health metrics
+      if (typeof health[field] === 'number' && health[field] < 0) {
+        throw new Error(
+          `Health data validation failed: '${field}' cannot be negative (got ${health[field]})`
+        );
+      }
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * Safely parse JSON with detailed error reporting
+ * FIX #2: Handles JSON parse errors gracefully with detailed logging
+ */
+function parseJSONSafely(jsonString, fieldName) {
+  if (!jsonString) return null;
+  if (typeof jsonString === 'object') return jsonString; // Already parsed
+  
+  try {
+    const parsed = JSON.parse(jsonString);
+    return parsed;
+  } catch (error) {
+    const errorMsg = `Invalid ${fieldName} JSON: ${error.message}`;
+    console.error(`❌ ${errorMsg}`);
+    console.error(`   Raw input: ${jsonString.substring(0, 100)}${jsonString.length > 100 ? '...' : ''}`);
+    throw new Error(errorMsg);
+  }
+}
+
+/**
+ * Extract settings from request with defaults
+ */
+function extractSettings(body, query) {
+  return {
+    location_poll_interval_minutes: 
+      body.location_poll_interval_minutes || query.location_poll_interval_minutes || 5,
+    healthkit_sync_interval_hours: 
+      body.healthkit_sync_interval_hours || query.healthkit_sync_interval_hours || 3,
+    sync_on_app_open: 
+      body.sync_on_app_open !== undefined ? body.sync_on_app_open : 
+      (query.sync_on_app_open !== undefined ? query.sync_on_app_open : true),
+    notifications_enabled: 
+      body.notifications_enabled !== undefined ? body.notifications_enabled : 
+      (query.notifications_enabled !== undefined ? query.notifications_enabled : true)
+  };
+}
+
+// ============================================================================
+// HTTP ENDPOINTS
+// ============================================================================
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Location server is running' });
 });
 
-// Receive location from iPhone (POST with body or query params)
+/**
+ * POST /location - Receive location and health data from iPhone
+ * Accepts: JSON body or query parameters
+ * Returns: Stored location with health data
+ */
 app.post('/location', (req, res) => {
   try {
-    // Accept data from either JSON body OR query parameters
-    let latitude = req.body.latitude || req.query.latitude;
-    let longitude = req.body.longitude || req.query.longitude;
+    // Extract required location fields
+    let latitude = req.body.latitude !== undefined ? req.body.latitude : req.query.latitude;
+    let longitude = req.body.longitude !== undefined ? req.body.longitude : req.query.longitude;
     let timestamp = req.body.timestamp || req.query.timestamp;
     let device = req.body.device || req.query.device;
 
@@ -41,30 +151,16 @@ app.post('/location', (req, res) => {
       });
     }
 
-    // Extract all health metrics
-    const health = {
-      steps: req.body.steps || req.query.steps,
-      heartRate: req.body.heartRate || req.query.heartRate,
-      restingHeartRate: req.body.restingHeartRate || req.query.restingHeartRate,
-      heartRateVariability: req.body.heartRateVariability || req.query.heartRateVariability,
-      bloodPressureSystolic: req.body.bloodPressureSystolic || req.query.bloodPressureSystolic,
-      bloodPressureDiastolic: req.body.bloodPressureDiastolic || req.query.bloodPressureDiastolic,
-      bloodOxygen: req.body.bloodOxygen || req.query.bloodOxygen,
-      activeEnergy: req.body.activeEnergy || req.query.activeEnergy,
-      basalEnergy: req.body.basalEnergy || req.query.basalEnergy,
-      distance: req.body.distance || req.query.distance,
-      flightsClimbed: req.body.flightsClimbed || req.query.flightsClimbed,
-      sleepDuration: req.body.sleepDuration || req.query.sleepDuration,
-      workouts: req.body.workouts || req.query.workouts
-    };
+    // FIX #1: Extract health data (only populated fields)
+    const health = extractHealthData(req.body, req.query);
+    
+    // FIX #3: Validate health data types
+    if (health) {
+      validateHealthData(health);
+    }
 
-    // Extract settings if provided
-    const settings = {
-      location_poll_interval_minutes: req.body.location_poll_interval_minutes || req.query.location_poll_interval_minutes || 5,
-      healthkit_sync_interval_hours: req.body.healthkit_sync_interval_hours || req.query.healthkit_sync_interval_hours || 3,
-      sync_on_app_open: req.body.sync_on_app_open !== undefined ? req.body.sync_on_app_open : (req.query.sync_on_app_open !== undefined ? req.query.sync_on_app_open : true),
-      notifications_enabled: req.body.notifications_enabled !== undefined ? req.body.notifications_enabled : (req.query.notifications_enabled !== undefined ? req.query.notifications_enabled : true)
-    };
+    // Extract settings
+    const settings = extractSettings(req.body, req.query);
 
     // Store location with all associated data
     currentLocation = {
@@ -74,48 +170,93 @@ app.post('/location', (req, res) => {
       device: device || 'iPhone',
       deviceModel: req.body.deviceModel || req.query.deviceModel || null,
       userId: req.body.userId || req.query.userId || null,
-      altitude: req.body.altitude || req.query.altitude,
-      speed: req.body.speed || req.query.speed,
+      altitude: req.body.altitude !== undefined ? req.body.altitude : req.query.altitude || null,
+      speed: req.body.speed !== undefined ? req.body.speed : req.query.speed || null,
       health: health,
       settings: settings,
       receivedAt: new Date().toISOString()
     };
 
-    console.log(`[${new Date().toISOString()}] Full sync received:`, {
-      location: { lat: currentLocation.latitude, lon: currentLocation.longitude },
-      health: health,
-      settings: settings
+    // FIX #4: Detailed logging
+    console.log(`[${new Date().toISOString()}] ✅ Location sync received:`, {
+      location: { 
+        latitude: currentLocation.latitude, 
+        longitude: currentLocation.longitude 
+      },
+      health: health ? Object.keys(health) : 'none',  // Log which fields we got
+      settings: settings,
+      userId: currentLocation.userId
     });
 
     res.json({ 
       status: 'ok', 
-      message: 'Location and health data received',
+      message: 'Location and health data received successfully',
       data: currentLocation 
     });
   } catch (error) {
-    console.error('Error processing location:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    // FIX #4: Detailed error logging
+    console.error(`❌ Error processing POST /location:`, {
+      error: error.message,
+      errorType: error.constructor.name,
+      timestamp: new Date().toISOString(),
+      bodyKeys: Object.keys(req.body || {}),
+      queryKeys: Object.keys(req.query || {})
+    });
+    
+    res.status(400).json({ 
+      error: error.message || 'Error processing location data',
+      hint: 'Check server logs for details'
+    });
   }
 });
 
-// Retrieve current location OR store if query params provided (GET accepts both)
+/**
+ * GET /location - Retrieve current location OR store via query params
+ * Query params: latitude, longitude, timestamp, device, health (JSON), settings (JSON)
+ * Returns: Current location with all data
+ */
 app.get('/location', (req, res) => {
   // If query parameters are provided, store them as current location
   if (req.query.latitude !== undefined && req.query.longitude !== undefined) {
     try {
+      // FIX #2: Safe JSON parsing with error handling
+      let health = null;
+      let settings = null;
+      
+      if (req.query.health) {
+        health = parseJSONSafely(req.query.health, 'health');
+      }
+      
+      if (req.query.settings) {
+        settings = parseJSONSafely(req.query.settings, 'settings');
+      }
+      
+      // FIX #3: Validate health data
+      if (health) {
+        validateHealthData(health);
+      }
+
       currentLocation = {
         latitude: parseFloat(req.query.latitude),
         longitude: parseFloat(req.query.longitude),
         timestamp: req.query.timestamp || new Date().toISOString(),
         device: req.query.device || 'iPhone',
-        receivedAt: new Date().toISOString(),
-        health: req.query.health ? JSON.parse(req.query.health) : null,
-        settings: req.query.settings ? JSON.parse(req.query.settings) : null,
         deviceModel: req.query.deviceModel || null,
-        userId: req.query.userId || null
+        userId: req.query.userId || null,
+        receivedAt: new Date().toISOString(),
+        health: health,
+        settings: settings || extractSettings({}, {})
       };
 
-      console.log(`[${new Date().toISOString()}] Location updated via GET:`, currentLocation);
+      // FIX #4: Detailed logging
+      console.log(`[${new Date().toISOString()}] ✅ Location updated via GET:`, {
+        location: { 
+          latitude: currentLocation.latitude, 
+          longitude: currentLocation.longitude 
+        },
+        health: health ? Object.keys(health) : 'none',
+        userId: currentLocation.userId
+      });
 
       return res.json({
         status: 'ok',
@@ -123,8 +264,18 @@ app.get('/location', (req, res) => {
         data: currentLocation
       });
     } catch (error) {
-      console.error('Error processing location:', error);
-      return res.status(400).json({ error: 'Invalid parameters' });
+      // FIX #4: Detailed error logging for parse/validation errors
+      console.error(`❌ Error processing GET /location:`, {
+        error: error.message,
+        errorType: error.constructor.name,
+        timestamp: new Date().toISOString(),
+        queryString: req.originalUrl
+      });
+      
+      return res.status(400).json({ 
+        error: error.message || 'Invalid parameters',
+        hint: 'Check server logs for details'
+      });
     }
   }
 
@@ -139,55 +290,131 @@ app.get('/location', (req, res) => {
   });
 });
 
-// Get location as simple text (useful for debugging)
+/**
+ * GET /location/text - Get location as plain text (useful for debugging)
+ */
 app.get('/location/text', (req, res) => {
   if (!currentLocation.latitude) {
     return res.send('No location data available yet');
   }
 
-  const text = `
+  let text = `
 Location: ${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}
 Device: ${currentLocation.device}
 Timestamp: ${currentLocation.timestamp}
-Received: ${currentLocation.receivedAt}
-  `.trim();
+Received: ${currentLocation.receivedAt}`;
 
-  res.type('text/plain').send(text);
+  if (currentLocation.health) {
+    text += `\n\nHealth Data:`;
+    for (const [key, value] of Object.entries(currentLocation.health)) {
+      text += `\n  ${key}: ${value}`;
+    }
+  }
+
+  if (currentLocation.userId) {
+    text += `\n\nUser ID: ${currentLocation.userId}`;
+  }
+
+  res.type('text/plain').send(text.trim());
 });
 
-// Status endpoint (show current location)
+/**
+ * GET /status - Server status and current location
+ */
 app.get('/status', (req, res) => {
   res.json({
     status: 'running',
     currentLocation: currentLocation,
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    nodeVersion: process.version,
+    memoryUsage: process.memoryUsage()
   });
 });
 
-// Root endpoint
+/**
+ * GET / - Root endpoint
+ */
 app.get('/', (req, res) => {
   res.json({
-    message: 'Location Tracking Server',
+    message: 'Location Tracking Server with HealthKit Data Support',
+    version: '2.0.0',
+    fixedIssues: [
+      'FIX #1: Undefined values no longer stored (filters empty fields)',
+      'FIX #2: JSON parse errors handled gracefully with details',
+      'FIX #3: Health data type validation (numbers must be numbers)',
+      'FIX #4: Detailed error logging for debugging'
+    ],
     endpoints: {
-      'POST /location': 'Submit location from iPhone Shortcut',
+      'POST /location': 'Submit location and health data from iPhone',
       'GET /location': 'Get current location (JSON)',
       'GET /location/text': 'Get current location (plain text)',
       'GET /status': 'Server status and current location',
       'GET /health': 'Health check'
+    },
+    documentation: {
+      'healthData': {
+        'description': 'Health metrics from HealthKit',
+        'type': 'object',
+        'fields': {
+          'steps': { 'type': 'number', 'unit': 'steps' },
+          'heartRate': { 'type': 'number', 'unit': 'bpm' },
+          'restingHeartRate': { 'type': 'number', 'unit': 'bpm' },
+          'heartRateVariability': { 'type': 'number', 'unit': 'ms' },
+          'bloodPressureSystolic': { 'type': 'number', 'unit': 'mmHg' },
+          'bloodPressureDiastolic': { 'type': 'number', 'unit': 'mmHg' },
+          'bloodOxygen': { 'type': 'number', 'unit': '%' },
+          'activeEnergy': { 'type': 'number', 'unit': 'kcal' },
+          'basalEnergy': { 'type': 'number', 'unit': 'kcal' },
+          'distance': { 'type': 'number', 'unit': 'meters' },
+          'flightsClimbed': { 'type': 'number', 'unit': 'flights' },
+          'sleepDuration': { 'type': 'number', 'unit': 'minutes' },
+          'workouts': { 'type': 'array', 'description': 'Array of workout objects' }
+        }
+      }
     }
   });
 });
 
-// Error handling
+/**
+ * Error handling middleware
+ */
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('❌ Unhandled error:', {
+    error: err.message,
+    stack: err.stack,
+    timestamp: new Date().toISOString()
+  });
+  
+  res.status(500).json({ 
+    error: 'Internal server error',
+    hint: 'Check server logs for details'
+  });
 });
 
-// Start server
+// ============================================================================
+// START SERVER
+// ============================================================================
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Location server listening on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Get location: http://localhost:${PORT}/location`);
+  console.log(`
+═══════════════════════════════════════════════════════════════
+  ✅ Location Server v2.0 (Fixed)
+  📍 Listening on port ${PORT}
+═══════════════════════════════════════════════════════════════
+
+  Endpoints:
+  - Health check:    http://localhost:${PORT}/health
+  - Get location:    http://localhost:${PORT}/location
+  - Server status:   http://localhost:${PORT}/status
+  - Documentation:   http://localhost:${PORT}/
+
+  Fixes Applied:
+  ✅ FIX #1: Undefined values filtered (no more undefined in health object)
+  ✅ FIX #2: JSON parse errors handled with detailed logging
+  ✅ FIX #3: Health data type validation (numeric fields checked)
+  ✅ FIX #4: Detailed error logging for debugging
+
+═══════════════════════════════════════════════════════════════
+  `);
 });
