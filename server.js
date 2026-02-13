@@ -37,15 +37,26 @@ function extractHealthData(body, query) {
     'sleepDuration', 'workouts'
   ];
   
-  // Only add fields that have actual values
+  // iOS app sends health as nested object: body.health or body.healthData
+  const healthObj = body?.health ?? body?.healthData ?? null;
+  if (healthObj && typeof healthObj === 'object') {
+    for (const field of healthFields) {
+      const value = healthObj[field];
+      if (value !== undefined && value !== null && value !== '') {
+        health[field] = value;
+      }
+    }
+  }
+  
+  // Fallback: read from top-level body/query (e.g. GET or older clients)
   for (const field of healthFields) {
+    if (health[field] !== undefined) continue;
     const value = body[field] !== undefined ? body[field] : query[field];
     if (value !== undefined && value !== null && value !== '') {
       health[field] = value;
     }
   }
   
-  // Return null if no health data, otherwise return object with only populated fields
   return Object.keys(health).length > 0 ? health : null;
 }
 
@@ -183,7 +194,7 @@ app.post('/location', (req, res) => {
         latitude: currentLocation.latitude, 
         longitude: currentLocation.longitude 
       },
-      health: health ? Object.keys(health) : 'none',  // Log which fields we got
+      health: health ?? 'none',
       settings: settings,
       userId: currentLocation.userId
     });
