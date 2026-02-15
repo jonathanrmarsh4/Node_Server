@@ -37,8 +37,8 @@ function extractHealthData(body, query) {
     'sleepDuration', 'workouts'
   ];
   
-  // iOS app sends health as nested object: body.health or body.healthData
-  const healthObj = body?.health ?? body?.healthData ?? null;
+  // iOS app may send health as nested object under various keys
+  const healthObj = body?.health ?? body?.healthData ?? body?.healthKit ?? body?.Health ?? null;
   if (healthObj && typeof healthObj === 'object') {
     for (const field of healthFields) {
       const value = healthObj[field];
@@ -164,7 +164,17 @@ app.post('/location', (req, res) => {
 
     // FIX #1: Extract health data (only populated fields)
     const health = extractHealthData(req.body, req.query);
-    
+
+    // Debug: when health is missing, log what we received so we can see iOS payload shape
+    if (!health && (req.body && typeof req.body === 'object')) {
+      const b = req.body;
+      const healthLike = {};
+      for (const key of ['health', 'healthData', 'healthKit', 'Health']) {
+        if (key in b) healthLike[key] = { type: typeof b[key], keys: typeof b[key] === 'object' && b[key] !== null ? Object.keys(b[key]) : null };
+      }
+      console.log('[POST /location] health missing – body keys:', Object.keys(b), '| health-like:', healthLike);
+    }
+
     // FIX #3: Validate health data types
     if (health) {
       validateHealthData(health);
